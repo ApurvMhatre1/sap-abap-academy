@@ -6,9 +6,287 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&
 const pct=(a,b)=>b?Math.round(a/b*100):0;
 function toast(msg,bad=false){const e=document.createElement("div");e.className="notice "+(bad?"error":"");e.style.cssText="position:fixed;right:20px;bottom:20px;z-index:100;max-width:420px";e.textContent=msg;document.body.appendChild(e);setTimeout(()=>e.remove(),4000)}
 function shell(content){document.getElementById("app").innerHTML=`<div class="app-shell"><header class="topbar"><div class="brand">SAP <span>ABAP</span> Academy</div><div class="top-actions">${state.user?`<span style="font-size:13px">${esc(state.user.email||"")}</span><button class="btn btn-ghost" onclick="logout()">Logout</button>`:""}</div></header>${content}</div>`}
-function renderAuth(){document.getElementById("app").innerHTML=`<div class="auth-wrap"><div class="card auth-card"><div class="brand" style="color:#101828;margin-bottom:18px">SAP <span>ABAP</span> Academy</div><h1>Certification Practice Portal</h1><p class="sub">Student assessment portal with a protected admin area.</p><div class="tabs"><button id="studentTab" class="tab active" onclick="switchAuth('student')">Student Login</button><button id="adminTab" class="tab" onclick="switchAuth('admin')">Admin</button></div><div id="authForm"></div><p class="footer-note">${state.demo?"Demo mode: configure Supabase in app.js for shared multi-device use.":"Supabase mode: students use secure email magic links."}</p></div></div>`;switchAuth("student")}
-function switchAuth(k){studentTab.classList.toggle("active",k==="student");adminTab.classList.toggle("active",k==="admin");authForm.innerHTML=k==="student"?`<label>Student name</label><input id="studentName" placeholder="e.g. Rahul Sharma"><label>Email address</label><input id="studentEmail" type="email" placeholder="student@example.com"><button class="btn btn-primary full" onclick="studentLogin()">Continue as Student</button><div class="notice">A secure magic link will be sent to the email address.</div>`:`<label>Admin email</label><input id="adminEmail" type="email" placeholder="admin@example.com"><label>Admin password</label><input id="adminPassword" type="password" placeholder="Password"><button class="btn btn-primary full" onclick="adminLogin()">Admin Login</button>`}
-async function studentLogin(){const name=studentName.value.trim(),email=studentEmail.value.trim().toLowerCase();if(!name||!email)return toast("Enter name and email.",true);if(state.demo){return toast("Demo mode is disabled for this production build. Configure Supabase.",true)}const{error}=await db.auth.signInWithOtp({email,options:{data:{full_name:name},emailRedirectTo:location.origin+location.pathname}});if(error)return toast(error.message,true);toast("Magic link sent. Open it from your email to finish login.")}
+function renderAuth(){document.getElementById("app").innerHTML=`<div class="auth-wrap"><div class="card auth-card"><div class="brand" style="color:#101828;margin-bottom:18px">SAP <span>ABAP</span> Academy</div><h1>Certification Practice Portal</h1><p class="sub">Student assessment portal with a protected admin area.</p><div class="tabs"><button id="studentTab" class="tab active" onclick="switchAuth('student')">Student Login</button><button id="adminTab" class="tab" onclick="switchAuth('admin')">Admin</button></div><div id="authForm"></div><p class="footer-note">${state.demo?"Demo mode: configure Supabase in app.js for shared multi-device use.":"Supabase mode: students use email and password."}</p></div></div>`;switchAuth("student")}
+function switchAuth(k){
+
+  studentTab.classList.toggle("active", k === "student");
+  adminTab.classList.toggle("active", k === "admin");
+
+  authForm.innerHTML = k === "student"
+    ? `
+      <div class="auth-mode-tabs">
+
+        <button
+          id="studentLoginTab"
+          class="tab"
+          onclick="switchStudentMode('login')">
+          Login
+        </button>
+
+        <button
+          id="studentSignupTab"
+          class="tab"
+          onclick="switchStudentMode('signup')">
+          New Student
+        </button>
+
+      </div>
+
+      <div id="studentAuthForm"></div>
+    `
+    : `
+      <label>Admin email</label>
+      <input id="adminEmail" type="email" placeholder="admin@example.com">
+
+      <label>Admin password</label>
+      <input id="adminPassword" type="password" placeholder="Password">
+
+      <button class="btn btn-primary full" onclick="adminLogin()">
+        Admin Login
+      </button>
+    `;
+
+  if(k === "student"){
+    switchStudentMode("login");
+  }
+}
+function switchStudentMode(mode){
+
+  const form = document.getElementById("studentAuthForm");
+  if(!form) return;
+
+  // Update active tab styling
+  const loginTab = document.getElementById("studentLoginTab");
+  const signupTab = document.getElementById("studentSignupTab");
+
+  if(loginTab) loginTab.classList.toggle("active", mode === "login");
+  if(signupTab) signupTab.classList.toggle("active", mode === "signup");
+
+  if(mode === "signup"){
+    form.innerHTML = `
+      <label>Student name</label>
+      <input id="studentName" placeholder="e.g. Rahul Sharma">
+
+      <label>Email address</label>
+      <input id="studentEmail" type="email" placeholder="student@example.com">
+
+      <label>Create password</label>
+      <input id="studentPassword" type="password" placeholder="Create a password">
+
+      <label>Confirm password</label>
+      <input id="studentPasswordConfirm" type="password" placeholder="Confirm password">
+
+      <button class="btn btn-primary full" onclick="studentSignup()">
+        Create Account
+      </button>
+
+      <div class="notice">
+        Your email is used only for your account login. No email confirmation is required.
+      </div>
+    `;
+  }else{
+    form.innerHTML = `
+      <label>Email address</label>
+      <input id="studentEmail" type="email" placeholder="student@example.com">
+
+      <label>Password</label>
+      <input id="studentPassword" type="password" placeholder="Your password">
+
+      <button class="btn btn-primary full" onclick="studentLogin()">
+  Student Login
+</button>
+
+<div style="text-align:center;margin-top:12px">
+  <button
+    type="button"
+    class="link-btn"
+    onclick="showForgotPassword()">
+    Forgot password?
+  </button>
+</div>
+
+<div class="notice">
+  New student? Select <b>New Student</b> above to create your account.
+</div>
+    `;
+  }
+}
+async function studentLogin(){
+
+  const email = studentEmail.value.trim().toLowerCase();
+  const password = studentPassword.value;
+
+  if(!email || !password){
+    return toast("Enter email and password.", true);
+  }
+
+  if(state.demo){
+    return toast("Demo mode is disabled for this production build. Configure Supabase.", true);
+  }
+
+  const { data, error } = await db.auth.signInWithPassword({
+    email,
+    password
+  });
+
+  if(error){
+    return toast(error.message, true);
+  }
+
+  const user = data.user;
+
+  const { data: profile, error: profileError } = await db
+    .from("profiles")
+    .select("*")
+    .eq("id", user.id)
+    .single();
+
+  if(profileError){
+    await db.auth.signOut();
+    return toast(profileError.message, true);
+  }
+
+  state.user = {
+    ...user,
+    ...profile
+  };
+
+  state.role = profile.role || "student";
+
+  if(state.role === "admin"){
+    return renderAdmin();
+  }
+
+  renderStudent();
+}
+async function showForgotPassword(){
+
+  const form = document.getElementById("studentAuthForm");
+
+  if(!form) return;
+
+  form.innerHTML = `
+    <h3 style="margin-top:0">Reset your password</h3>
+
+    <p class="muted">
+      Enter your registered email address and we'll send you a password reset link.
+    </p>
+
+    <label>Email address</label>
+    <input
+      id="resetEmail"
+      type="email"
+      placeholder="student@example.com">
+
+    <button
+      class="btn btn-primary full"
+      onclick="sendPasswordReset()">
+      Send Reset Link
+    </button>
+
+    <div style="text-align:center;margin-top:12px">
+      <button
+        type="button"
+        class="link-btn"
+        onclick="switchStudentMode('login')">
+        Back to Login
+      </button>
+    </div>
+  `;
+}
+async function sendPasswordReset(){
+
+  const email = resetEmail.value.trim().toLowerCase();
+
+  if(!email){
+    return toast("Enter your email address.", true);
+  }
+
+  if(state.demo){
+    return toast(
+      "Demo mode is disabled for this production build. Configure Supabase.",
+      true
+    );
+  }
+
+  const { error } = await db.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname
+  });
+
+  if(error){
+    return toast(error.message, true);
+  }
+
+  toast("Password reset link sent. Check your email.");
+}
+async function studentSignup(){
+
+  const name = studentName.value.trim();
+  const email = studentEmail.value.trim().toLowerCase();
+  const password = studentPassword.value;
+  const confirm = studentPasswordConfirm.value;
+
+  if(!name || !email || !password || !confirm){
+    return toast("Please fill in all fields.", true);
+  }
+
+  if(password.length < 6){
+    return toast("Password must be at least 6 characters.", true);
+  }
+
+  if(password !== confirm){
+    return toast("Passwords do not match.", true);
+  }
+
+  if(state.demo){
+    return toast("Demo mode is disabled for this production build. Configure Supabase.", true);
+  }
+
+  const { data, error } = await db.auth.signUp({
+    email,
+    password,
+    options:{
+      data:{
+        full_name:name
+      }
+    }
+  });
+
+  if(error){
+    return toast(error.message, true);
+  }
+
+  const user = data.user;
+
+  if(!user){
+    return toast("Account creation failed.", true);
+  }
+
+  const { error: profileError } = await db
+    .from("profiles")
+    .insert({
+      id:user.id,
+      full_name:name,
+      email:email,
+      role:"student"
+    });
+
+  if(profileError){
+    await db.auth.signOut();
+    return toast(profileError.message, true);
+  }
+
+  state.user = {
+    ...user,
+    full_name:name,
+    email:email,
+    role:"student"
+  };
+
+  state.role = "student";
+
+  renderStudent();
+}
 async function adminLogin(){const email=adminEmail.value.trim().toLowerCase(),pw=adminPassword.value;if(state.demo)return toast("Configure Supabase before using admin.",true);const{data,error}=await db.auth.signInWithPassword({email,password:pw});if(error)return toast(error.message,true);const{data:p}=await db.from("profiles").select("role,full_name,email").eq("id",data.user.id).single();if(p?.role!=="admin"){await db.auth.signOut();return toast("This account is not an admin.",true)}state.user={...data.user,...p};state.role="admin";renderAdmin()}
 async function logout(){clearInterval(timerHandle);if(!state.demo)await db.auth.signOut();state.user=null;state.role=null;state.exam=null;renderAuth()}
 async function getAttempts(){if(state.demo)return[];const{data,error}=await db.from("attempts").select("id,score,total,percentage,status,created_at,started_at,expires_at,submitted_at").eq("student_id",state.user.id).order("created_at",{ascending:false});if(error){toast(error.message,true);return[]}return data||[]}
@@ -34,5 +312,112 @@ async function adminStudents(){const{data,error}=await db.from("profiles").selec
 async function adminQuestions(){const{data,error}=await db.from("questions").select("id,topic,question,option_a,option_b,option_c,option_d,correct_answer,explanation").order("id");if(error)return toast(error.message,true);adminLayout(`<div class="card"><div class="page-title"><div><h3>Question Bank</h3><p class="muted">${data?.length||0} questions.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Topic</th><th>Question</th><th>Answer</th></tr></thead><tbody>${(data||[]).map((q,i)=>`<tr><td>${i+1}</td><td>${esc(q.topic)}</td><td>${esc(q.question)}</td><td><b>${q.correct_answer}</b></td></tr>`).join("")}</tbody></table></div></div>`,'questions')}
 async function adminResults(){const{data,error}=await db.from("attempts").select("id,student_id,score,total,percentage,status,submitted_at,created_at,profiles(full_name,email)").eq("status","submitted").order("submitted_at",{ascending:false});if(error)return toast(error.message,true);adminLayout(`<div class="card"><div class="page-title"><h3>Assessment Results</h3><button class="btn btn-secondary" onclick='exportResults(${JSON.stringify(data||[])})'>Export CSV</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Student</th><th>Email</th><th>Score</th><th>%</th><th>Status</th><th>Date</th></tr></thead><tbody>${(data||[]).map(a=>`<tr><td>${esc(a.profiles?.full_name)}</td><td>${esc(a.profiles?.email)}</td><td>${a.score}/${a.total}</td><td>${a.percentage}%</td><td><span class="badge ${a.percentage>=CONFIG.PASS_PERCENT?"success":"fail"}">${a.percentage>=CONFIG.PASS_PERCENT?"PASS":"FAIL"}</span></td><td>${new Date(a.submitted_at||a.created_at).toLocaleString()}</td></tr>`).join("")||`<tr><td colspan="6" class="muted">No attempts yet.</td></tr>`}</tbody></table></div></div>`,'results')}
 function exportResults(data){const rows=[["Student","Email","Score","Total","Percentage","Date"],...(data||[]).map(a=>[a.profiles?.full_name,a.profiles?.email,a.score,a.total,a.percentage,a.submitted_at])],csv=rows.map(r=>r.map(x=>`"${String(x??"").replaceAll('"','""')}"`).join(",")).join("\n"),blob=new Blob([csv],{type:"text/csv"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="sap_abap_results.csv";a.click()}
-async function boot(){if(state.demo)return renderAuth();const{data}=await db.auth.getSession();if(data.session){const u=data.session.user,{data:p}=await db.from("profiles").select("*").eq("id",u.id).single();state.user={...u,...p};state.role=p?.role||"student";return state.role==="admin"?renderAdmin():renderStudent()}renderAuth()}
+async function boot(){
+
+  if(state.demo){
+    return renderAuth();
+  }
+
+  const { data } = await db.auth.getSession();
+
+  /*
+   * Password recovery session
+   */
+  if(data.session && window.location.hash.includes("type=recovery")){
+    return renderPasswordReset();
+  }
+
+  if(data.session){
+
+    const u = data.session.user;
+
+    const { data:p } = await db
+      .from("profiles")
+      .select("*")
+      .eq("id",u.id)
+      .single();
+
+    state.user = {
+      ...u,
+      ...p
+    };
+
+    state.role = p?.role || "student";
+
+    return state.role === "admin"
+      ? renderAdmin()
+      : renderStudent();
+  }
+
+  renderAuth();
+}
+function renderPasswordReset(){
+
+  document.getElementById("app").innerHTML = `
+    <div class="auth-wrap">
+      <div class="card auth-card">
+
+        <div class="brand" style="color:#101828;margin-bottom:18px">
+          SAP <span>ABAP</span> Academy
+        </div>
+
+        <h1>Set New Password</h1>
+
+        <p class="sub">
+          Enter a new password for your student account.
+        </p>
+
+        <label>New password</label>
+        <input
+          id="newPassword"
+          type="password"
+          placeholder="New password">
+
+        <label>Confirm password</label>
+        <input
+          id="newPasswordConfirm"
+          type="password"
+          placeholder="Confirm password">
+
+        <button
+          class="btn btn-primary full"
+          onclick="updateStudentPassword()">
+          Update Password
+        </button>
+
+      </div>
+    </div>
+  `;
+}
+async function updateStudentPassword(){
+
+  const password = newPassword.value;
+  const confirm = newPasswordConfirm.value;
+
+  if(!password || !confirm){
+    return toast("Enter and confirm your new password.", true);
+  }
+
+  if(password.length < 6){
+    return toast("Password must be at least 6 characters.", true);
+  }
+
+  if(password !== confirm){
+    return toast("Passwords do not match.", true);
+  }
+
+  const { error } = await db.auth.updateUser({
+    password: password
+  });
+
+  if(error){
+    return toast(error.message, true);
+  }
+
+  await db.auth.signOut();
+
+  toast("Password updated successfully. You can now log in.");
+
+  renderAuth();
+}
 boot();
